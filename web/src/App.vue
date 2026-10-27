@@ -6,12 +6,50 @@ interface Msg {
   content: string
 }
 
-const messages = ref<Msg[]>([
-  { role: 'assistant', content: '你好！有什么可以帮你的？' },
-])
+const messages = ref<Msg[]>([])
 const input = ref('')
 const sending = ref(false)
 const listEl = ref<HTMLElement>()
+
+// ---- 上下文查看（内容由后端 /api/context 返回，前端不写死） ----
+const showContext = ref(false)
+const contextJson = ref('')
+const contextCount = ref(0)
+const ctxWrap = ref<HTMLPreElement>()
+const copyBtnText = ref('复制 JSON')
+
+function getHistory() {
+  return messages.value
+    .filter((m) => m.content)
+    .slice(0, -1)
+    .map((m) => ({ role: m.role, content: m.content }))
+}
+
+async function openContext() {
+  showContext.value = true
+  contextJson.value = '加载中…'
+  try {
+    const res = await fetch('/api/context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: getHistory() }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    contextCount.value = data.messages.length
+    contextJson.value = JSON.stringify(data.messages, null, 2)
+  } catch (e) {
+    contextJson.value = `获取上下文失败：${e}`
+  }
+  await nextTick()
+  ctxWrap.value?.scrollTo({ top: 0 })
+}
+
+async function copyContext() {
+  await navigator.clipboard.writeText(contextJson.value)
+  copyBtnText.value = '已复制'
+  setTimeout(() => (copyBtnText.value = '复制 JSON'), 1500)
+}
 
 // ---- 设置相关 ----
 const showSettings = ref(false)
@@ -87,15 +125,11 @@ async function send() {
   listEl.value?.scrollTo({ top: listEl.value.scrollHeight })
 
   try {
-    const history = messages.value
-      .filter((m) => m.content)
-      .slice(0, -1)
-      .map((m) => ({ role: m.role, content: m.content }))
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: [{ role: 'system', content: '你是一个友好、简洁的 AI 助手。' }, ...history],
+        messages: getHistory(),
         model: model.value || undefined,
       }),
     })
@@ -138,9 +172,36 @@ async function send() {
         </select>
         <button
           class="rounded-full border px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+          @click="openContext"
+        >上下文</button>
+        <button
+          class="rounded-full border px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
           @click="showSettings = !showSettings"
         >设置</button>
       </div>
+    </div>
+
+    <!-- 上下文查看面板 -->
+    <div v-if="showContext" class="mb-3 rounded-lg border bg-white p-4 shadow-sm">
+      <div class="mb-2 flex items-center justify-between">
+        <span class="text-sm text-gray-600">
+          下次请求将发送 {{ contextCount }} 条消息，约 {{ contextJson.length }} 字符
+        </span>
+        <div class="flex items-center gap-2">
+          <button
+            class="rounded-full border px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
+            @click="copyContext"
+          >{{ copyBtnText }}</button>
+          <button
+            class="rounded-full border px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
+            @click="showContext = false"
+          >收起</button>
+        </div>
+      </div>
+      <pre
+        ref="ctxWrap"
+        class="max-h-72 overflow-auto rounded-md bg-gray-50 p-3 text-xs leading-5 text-gray-800"
+      >{{ contextJson }}</pre>
     </div>
 
     <!-- 设置面板 -->

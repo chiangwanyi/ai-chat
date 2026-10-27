@@ -6,6 +6,10 @@ class ChatBody(BaseModel):
     model: str | None = None
 
 
+class MessagesBody(BaseModel):
+    history: list[dict] = []
+
+
 class ConfigBody(BaseModel):
     api_key: str | None = None
     base_url: str | None = None

@@ -5,9 +5,16 @@ from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
 from .config import DEFAULT_BASE_URL, DEFAULT_MODEL, get_api_key, load_config, make_client, save_config
-from .schemas import ChatBody, ConfigBody
+from .schemas import ChatBody, ConfigBody, MessagesBody
 
 router = APIRouter(prefix="/api")
+
+SYSTEM_PROMPT = "你是一个友好、简洁的 AI 助手。"
+
+
+def build_messages(history: list[dict]) -> list[dict]:
+    """上下文（system 提示词 + 历史）统一在服务端构建，前端不写死。"""
+    return [{"role": "system", "content": SYSTEM_PROMPT}, *history]
 
 
 @router.get("/config")
@@ -48,6 +55,12 @@ def list_models():
         raise HTTPException(502, f"获取模型列表失败: {e}")
 
 
+@router.post("/context")
+def preview_context(body: MessagesBody):
+    """返回下次 /api/chat 实际发送给模型的完整 messages。"""
+    return {"messages": build_messages(body.history)}
+
+
 @router.post("/chat")
 def chat(body: ChatBody):
     client = make_client()
@@ -56,7 +69,7 @@ def chat(body: ChatBody):
     def gen():
         stream = client.chat.completions.create(
             model=model,
-            messages=body.messages,
+            messages=build_messages(body.messages),
             stream=True,
         )
         for chunk in stream:
